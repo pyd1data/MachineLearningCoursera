@@ -1,0 +1,89 @@
+---
+title: "Performance comparison of machine learning algorithm applied to Samsung Human Activity Dataset"
+output: html_document
+subtitle: Machine Learning assignment, by Pierre Dodin
+keep_md: yes
+fig_width: 2
+fig_height: 1.5
+dpi: 300
+---
+  
+## Introduction
+  
+In this brief report, we use the caret package to analyse the Samsung dataset of Human Activity Recognition (HAR), a "database built from the recordings of 30 subjects performing activities of daily living (ADL) while carrying a waist-mounted smartphone with embedded inertial sensors". (see https://archive.ics.uci.edu/ml/datasets/human+activity+recognition+using+smartphones for details)
+	
+As explained in the dataset reference "Each person performed six activities (WALKING, WALKINGUPSTAIRS, WALKINGDOWNSTAIRS, SITTING, STANDING, LAYING)". This leads to a labelling of the dataset. We want to use machine learning to see if we can find the correct labels by analysing the multi-dimensional numerical features of the database.
+
+Caret package is powerfull to very easily clean data by analysing the level of correlation
+between features or removing near zerr variance features. The aim is to ovoid a to high dimensionality level that can lead to difficult machine learning inference.
+We will see that random forest as a greater performance than linear discriminant analysis
+
+## Training preprocess
+Here we load the data set 
+```{r sparam1, warning=F}
+library(caret)
+set.seed(123)
+training <- read.csv("pml-training.csv", stringsAsFactors=FALSE)
+dim(training)
+```
+Then we remove features with quasi all NAs
+```{r sparam2, warning=F}
+training$classe <- as.factor(training$classe)
+training<-training[,-(1:5)] #remove non numerical
+AllNA    <- sapply(training, function(x) mean(is.na(x))) > 0.95
+training<-training[, AllNA==FALSE]
+dim(training)
+```
+
+##Cleaned Train computation
+Data cleaning is computed, by removing near zero variance and highly correlated features 
+```{r sparam3, warning=F}
+training <- training[,-nearZeroVar(training)]
+dim(training)
+cor.matrix <- cor(training[, -54]) #remove class to get numerical vector for correlation
+correlatedPredictors = findCorrelation(cor.matrix, cutoff = 0.8)
+training = training[, -correlatedPredictors]
+dim(training)
+```
+The dimension of the cleaned dataset is half the dimension of the uncleaned data set.
+## Data partiction between train and test,cleaned and un-cleaned
+Data is splitted between train and a simulated test set.
+```{r sparam4, warning=F}
+inTrain <- createDataPartition(y=training$classe, p=0.6, list=FALSE)
+training <- training[inTrain,]
+testing <- training[-inTrain,]
+```
+
+## Training
+Two models are trained, Random Forest and LDA.
+```{r sparam5, warning=F}
+controlRF <- trainControl(method="cv", number=4, verboseIter=FALSE)
+modFitRandForest <- train(classe ~ ., data=training , method="rf",
+                          trControl=controlRF)
+modFitLDA <- train(classe ~ ., data=training , method="lda",
+                          trControl=controlRF)
+```
+
+
+##Performance by inference on the simulated test set
+
+Two prediction are done, Random Forest and LDA. Confusion matrix are computed. We see a very large performance difference between the two method. Random Forest obtains a perfect score of 1 while LDA accuracy is 0.6546.
+
+```{r sparam6, warning=F}
+predictRandForest <- predict(modFitRandForest, newdata=testing)
+confMatRandForest <- confusionMatrix(predictRandForest, testing$classe)
+confMatRandForest
+predictLDA <- predict(modFitLDA, newdata=testing)
+confMatLDA <- confusionMatrix(predictLDA, testing$classe)
+confMatLDA
+```
+
+Random Forest performance is greater than linear discriminant analysis  performance.
+
+##Real testing data results with the best model
+```{r sparam7, warning=F}
+testing <- read.csv("pml-testing.csv", stringsAsFactors=FALSE)
+testing <- testing[,names(testing) %in% names(training)]
+test <- predict(modFitRandForest, testing)
+test
+```
